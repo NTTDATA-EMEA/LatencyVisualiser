@@ -8,20 +8,57 @@
 import SwiftUI
 
 struct ContentView: View {
-    private var client = WebSocketClient()
-    
+    private var edgeClient = WebSocketClient(url:"ws://localhost:8080")
+    private var cloudClient = WebSocketClient(url:"wss://x56l2wxg6h.execute-api.eu-central-1.amazonaws.com/Prod")
+
     @State private var connected = false
+    @State private var edgeLatency = "--- ms"
+    @State private var cloudLatency = "--- ms"
+    @State private var commonLog = "Logging started"
+    
+    init() {
+        edgeClient.registerReceiver(receiver: self.receiveEdge)
+        cloudClient.registerReceiver(receiver: self.receiveCloud)
+        edgeClient.registerLogger(logger: self.appendLog)
+        cloudClient.registerLogger(logger: self.appendLog)
+    }
 
     var body: some View {
         VStack {
-            Text("Hello, world!")
-            .padding()
+            HStack {
+                VStack{
+                    Text("Edge")
+                        .fontWeight(.bold)
+                    Text(self.edgeLatency)
+                        .font(Font.system(size: 20, design: .monospaced))
+                        .padding(5)
+                }
+                Spacer()
+                VStack{
+                    Text("Cloud")
+                        .fontWeight(.bold)
+                    Text(self.cloudLatency)
+                        .font(Font.system(size: 20, design: .monospaced))
+                        .padding(5)
+                }
+            }
+            .padding(40)
             Spacer()
+            HStack {
+                TextEditor(text:self.$commonLog)
+                    .frame(
+                        width: UIScreen.main.bounds.size.width-20,
+                        height: UIScreen.main.bounds.size.height/4,
+                        alignment: .bottomLeading)
+                    .font(Font.system(size: 10, design: .monospaced))
+                    .padding(5)
+                    .border(/*@START_MENU_TOKEN@*/Color.black/*@END_MENU_TOKEN@*/)
+            }.padding(5)
             HStack() {
-                Button(action: doLeft) {
+                Button(action: doEdge) {
                     HStack {
                         Image(systemName: "arrow.left.square.fill")
-                        Text("Left")
+                        Text("Edge")
                         .frame(minWidth: 0, maxWidth: 50)
                     }
                     .padding()
@@ -29,9 +66,9 @@ struct ContentView: View {
                     .background(Color.blue)
                     .cornerRadius(10)
                 }
-                Button(action: doRight) {
+                Button(action: doCloud) {
                     HStack {
-                        Text("Right")
+                        Text("Cloud")
                         .frame(minWidth: 0, maxWidth: 50)
                         Image(systemName: "arrow.right.square.fill")
                     }
@@ -56,37 +93,53 @@ struct ContentView: View {
         }
     }
     
-    private func doLeft() {
-        print("Left")
+    private func doEdge() {
+        let msg = Message(action:"sendmessage", data:String(Date().timeIntervalSince1970))
         if (connected) {
-            client.sendMessage(message: "{\"action\":\"sendmessage\", \"data\":\"left\"}")
+            edgeClient.sendMessage(message:msg)
         }
-        // Create 1st timestamp
-        let start = Date()
         
-        // Do remote call
-        
-        // Create 2nd timestamp
-        let stop = Date()
-        
-        // Calculate diff
-        print(stop.distance(to:start))
     }
 
-    private func doRight() {
+    private func doCloud() {
+        let msg = Message(action:"sendmessage", data:String(Date().timeIntervalSince1970))
         if (connected) {
-            client.sendMessage(message: "{\"action\":\"sendmessage\", \"data\":\"right\"}")
+            cloudClient.sendMessage(message:msg)
         }
     }
 
     private func doToggleConnect() {
         if (!self.connected) {
-            client.connect()
+            edgeClient.connect()
+            edgeClient.registerReceiver(receiver: self.receiveEdge)
+            edgeClient.registerLogger(logger: self.appendLog)
+            cloudClient.connect()
+            cloudClient.registerReceiver(receiver: self.receiveCloud)
+            cloudClient.registerLogger(logger: self.appendLog)
             self.connected = true
         } else {
-            client.disconnect()
+            edgeClient.disconnect()
+            cloudClient.disconnect()
             self.connected = false
         }
+    }
+    
+    func formatTime(time:TimeInterval) -> String {
+        return String(format: "%.3f ms", Float(time))
+    }
+    
+    func receiveEdge(text:String) {
+        let from = Date(timeIntervalSince1970:TimeInterval(text)!)
+        self.edgeLatency = formatTime(time:from.distance(to:Date()))
+    }
+    
+    func receiveCloud(text:String) {
+        let from = Date(timeIntervalSince1970:TimeInterval(text)!)
+        self.cloudLatency = formatTime(time:from.distance(to:Date()))
+    }
+    
+    func appendLog(text:String) {
+        self.commonLog.append("\n" + text)
     }
 }
 
